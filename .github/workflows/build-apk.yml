@@ -1,9 +1,8 @@
+
 name: Build PocketFlip APK from ZIP
 
-"on":
+on:
   push:
-    paths:
-      - 'pocketflip-project.zip'
   workflow_dispatch:
 
 permissions:
@@ -25,7 +24,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Gradle 8.5
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.5'
 
@@ -38,43 +37,49 @@ jobs:
           EXTRACT_DIR="$RUNNER_TEMP/pocketflip-source"
 
           if [[ ! -f "$ZIP_FILE" ]]; then
-            echo "ERROR: pocketflip-project.zip is missing from the repository root."
-            echo "Upload the ZIP to the top level of the repository with this exact name."
+            echo "ERROR: pocketflip-project.zip is missing from repository root."
             exit 1
           fi
 
-          rm -rf "$EXTRACT_DIR"
           mkdir -p "$EXTRACT_DIR"
           unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
 
-          SETTINGS_FILE="$(find "$EXTRACT_DIR" -maxdepth 6 -type f -name settings.gradle -print -quit)"
+          SETTINGS_FILE="$(find "$EXTRACT_DIR" -maxdepth 8 -type f -name settings.gradle -print -quit)"
+
           if [[ -z "$SETTINGS_FILE" ]]; then
-            echo "ERROR: Could not find settings.gradle inside the ZIP."
+            echo "ERROR: settings.gradle not found inside ZIP."
             exit 1
           fi
 
           PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
           if [[ ! -f "$PROJECT_DIR/app/build.gradle" ]]; then
-            echo "ERROR: Could not find app/build.gradle beside settings.gradle."
+            echo "ERROR: app/build.gradle not found."
             exit 1
           fi
 
-          cp -a "$PROJECT_DIR/." "$GITHUB_WORKSPACE/"
-          echo "PocketFlip project extracted."
-          test -f "$GITHUB_WORKSPACE/settings.gradle"
-          test -f "$GITHUB_WORKSPACE/app/build.gradle"
+          echo "Project found: $PROJECT_DIR"
 
-      - name: Verify Android app module
-        shell: bash
+          shopt -s dotglob nullglob
+
+          for item in "$PROJECT_DIR"/*; do
+            if [[ "$(basename "$item")" == ".github" ]]; then
+              continue
+            fi
+            cp -a "$item" "$GITHUB_WORKSPACE/"
+          done
+
+          echo "Project extracted successfully."
+
+      - name: Verify Android project
         run: |
-          set -euo pipefail
           gradle projects --console=plain
           gradle :app:tasks --all --console=plain | grep -E 'assemble(Debug|Release)'
 
       - name: Build Debug APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: PocketFlip-Android-APK
